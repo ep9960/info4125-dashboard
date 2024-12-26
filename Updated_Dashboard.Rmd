@@ -1,0 +1,673 @@
+---
+title: "dashboard test"
+output: html_document
+date: "2024-11-21"
+runtime: shiny
+---
+
+## Loading Libraries
+
+The following code chunks loads in the libraries used in this RShiny file.
+
+```{r loading in libraries}
+# The following library is for the dashbaord
+library(shiny)
+# The following libraries is for data cleaning
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(readr)
+# The folloiwng libraries are for plotting data
+library(ggplot2)
+library(scales)
+library(plotly)
+# The following libraries are for creating the dashboard
+library(shiny)
+library(shinydashboard)
+```
+
+## Loading Data
+
+The following code chunk loads in the survey data used for this project.
+
+```{r loading-in-the-data}
+data <- read.csv("survey_data.csv", header=TRUE)
+recs <- read.csv("recs.csv", header=TRUE)
+```
+
+## Clean Data
+
+The following code chunk cleans the survey data.
+
+```{r data-cleaning}
+grocery_data <- data %>% rename(
+  Store = Q1, 
+  Other_Store = Q2, 
+  Produce = Q3_1, 
+  Dairy = Q3_2, 
+  Grain = Q3_3, 
+  Baking = Q3_4, 
+  Drinks = Q3_5, 
+  Protein = Q3_6, 
+  Freq_Dineout = Q1.1, 
+  Resturant = Q2.1, 
+  Other_Resturant = Q3, 
+  Koko = Q4_1, 
+  WingsOver = Q4_2, 
+  Moosewood = Q4_3, 
+  ThompsonBleeker = Q4_4, 
+  Pokelava = Q4_5, 
+  Appetizers = Q5_1, 
+  Entrees = Q5_2, 
+  Desserts = Q5_3, 
+  Beverages = Q5_4)
+
+grocery_data <- grocery_data[-c(1, 2), ] %>%
+  select(-(1:11)) %>%
+  filter(!is.na(Store) & Store != "")
+
+grocery_data <- grocery_data %>%
+  mutate(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein", "Appetizers", "Entrees", "Desserts", "Beverages"), ~ ifelse(. == "", 0, .))) %>% 
+  mutate(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein","Appetizers", "Entrees", "Desserts", "Beverages"), as.numeric))
+
+grocery_data <- grocery_data %>%
+  mutate(Weekly_Grocery_Total = rowSums(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein")), na.rm = TRUE)) %>%
+   mutate(Weekly_Dineout_Total = rowSums(across(c("Appetizers", "Entrees", "Desserts", "Beverages")), na.rm = TRUE)) %>%
+  mutate(Weekly_Total = rowSums(across(c("Weekly_Grocery_Total", "Weekly_Dineout_Total")), na.rm = TRUE))
+
+```
+
+## Grocery vs Dining Out Spending
+
+The folloiwng code chunk is one of our key metrics which is grocery vs dining out spending.
+
+```{r spending-bar-chart}
+#weekly grocery vs dining out spending
+avg_grocery <- mean(grocery_data$Weekly_Grocery_Total)
+avg_dining <- mean(grocery_data$Weekly_Dineout_Total)
+
+averages <- data.frame(
+  Category = c("Grocery", "Dineout"),
+  Average = c(avg_grocery, avg_dining)
+)
+
+# reordering the categories
+averages$Category <- factor(averages$Category, levels = c("Grocery", "Dineout"))
+
+# Creating the bar chart
+spending_Barchart <- ggplot(averages, aes(x = Category, y = Average, fill = Category)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0("$", format(round(Average, 2), nsmall = 2))), 
+            vjust = ifelse(averages$Average < 5, -1, -0.3), 
+            size = 5) +
+  labs(
+    y = "Average Spending (in Dollars)", 
+    x = NULL
+  ) +
+  scale_fill_manual(values = c("Grocery" = "darkseagreen", "Dineout" = "darkslategray2")) + # Use named colors
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title.y = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major.y = element_line(color = "gray", size = 0.5)
+  )
+
+spending_Barchart
+```
+
+## Top Restuarant and Grocery Store
+
+The following code chunk is one of our key metrics for top restuarant and grocery store spending.
+
+```{r table-top-rest-store}
+top_grocery <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  pivot_longer(
+    cols = c(Produce, Dairy, Grain, Baking, Drinks, Protein), 
+    names_to = "Grocery_Category", 
+    values_to = "Grocery_Spending"
+  ) %>%
+  group_by(week) %>%
+  arrange(desc(Grocery_Spending)) %>%
+  slice_head(n = 3) %>% 
+  
+  summarise(
+    Top_3_Grocery_Categories = paste(Grocery_Category, collapse = ", "),
+    Top_3_Grocery_Amounts = paste(Grocery_Spending, collapse = ", ")
+  )
+
+
+top_restaurant <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  pivot_longer(
+    cols = c(Appetizers, Entrees, Desserts, Beverages), 
+    names_to = "Restaurant_Category", 
+    values_to = "Restaurant_Spending"
+  ) %>%
+  group_by(week) %>%
+  arrange(desc(Restaurant_Spending)) %>%
+  slice_head(n = 3) %>% 
+  
+  summarise(
+    Top_3_Restaurant_Categories = paste(Restaurant_Category, collapse = ", "),
+    Top_3_Restaurant_Amounts = paste(Restaurant_Spending, collapse = ", ")
+  )
+
+top_three_spending <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  left_join(top_grocery, by = "week") %>%
+  left_join(top_restaurant, by = "week") %>%
+  select(-week)
+
+
+top_three_spending %>%
+  select(Top_3_Grocery_Categories, Top_3_Grocery_Amounts, Top_3_Restaurant_Categories, Top_3_Restaurant_Amounts)
+
+Table_data <- grocery_data %>%
+  mutate(
+    Store_Name = ifelse(Store == "Other", Other_Store, Store)
+  )
+
+# Step 2: Select the top restaurant (with a value of 1) for each week
+Table_data <- Table_data %>%
+  rowwise() %>%
+  mutate(
+    Restaurant_Name = case_when(
+      Koko == 1 ~ "Koko",
+      WingsOver == 1 ~ "WingsOver",
+      Moosewood == 1 ~ "Moosewood",
+      ThompsonBleeker == 1 ~ "ThompsonBleeker",
+      Pokelava == 1 ~ "Pokelava",
+      TRUE ~ NA_character_  # Handle cases where no restaurant is selected
+    )
+  ) %>%
+  ungroup()
+
+# Step 3: Create a separate table with just the store and top restaurant for each week
+store_restaurant_table <- Table_data %>%
+  mutate(week = row_number()) %>% # Add week number as an identifier
+  select(week, Store_Name, Restaurant_Name) # Select only relevant columns
+
+# View the resulting table
+store_restaurant_table
+
+```
+
+## Monthly Food Spending
+
+The following code chunk is one of our key metrics for monthly food spending line graph.
+
+```{r monthly-food-spending}
+
+# Prepare the data
+lineGraph_Data <- grocery_data %>%
+  mutate(week = row_number()) %>%
+  filter(Store != "") %>%
+  filter(week %in% c(1, 2, 3, 4)) %>%
+  mutate(Dates = as.Date(c("2024-11-09", "2024-11-15", "2024-11-22", "2024-11-29")))
+
+# Generate a sequence of dates with a 7-day interval within the specified range
+date_seq <- seq.Date(from = as.Date("2024-11-09"), 
+                     to = as.Date("2024-11-29"), 
+                     by = "6 days")
+
+# Create the dynamic plot
+fig <- plot_ly(lineGraph_Data, 
+               x = ~Dates,  # Use Dates for x-axis
+               y = ~Weekly_Total, 
+               name = 'Daily Total', 
+               type = 'scatter', 
+               mode = 'lines+markers',
+               line = list(color = '#4e614d'),
+               marker = list(color = '#1b291a'))
+
+# Customize layout for interactivity
+lineGraph <- fig %>%
+  layout(
+    xaxis = list(
+      title = "Dates",
+      showgrid = TRUE,
+      tickformat = "%m/%d/%Y",
+      tickvals = date_seq, # Set the ticks for the x-axis as the generated date sequence
+      ticktext = format(date_seq, "%m/%d/%Y"),  # Customize the format of the date labels
+      range = c(as.Date("2024-11-09"), as.Date("2024-11-29"))
+    ),
+    yaxis = list(
+      title = "Total Spent (in USD)",
+      tickprefix = "$"
+    )
+  )
+
+# View the plot
+lineGraph
+
+```
+
+## Your Budget is X
+
+The following code chunk is one of our key metrics for demonstrating to users that their budget is X amount.
+
+```{r user-budget-X}
+
+user_budget <- sum(grocery_data$Weekly_Total)
+
+```
+
+
+## Month's Recommendation
+
+The following code chunk is one of our key metrics for demonstrating to users the current's month recommendation.
+
+```{r month-rec}
+# create totals of food budgets
+grocery_data <- grocery_data %>%
+  mutate(Weekly_Grocery_Total = rowSums(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein")), na.rm = TRUE)) %>%
+   mutate(Weekly_Dineout_Total = rowSums(across(c("Appetizers", "Entrees", "Desserts", "Beverages")), na.rm = TRUE)) %>%
+  mutate(Weekly_Total = rowSums(across(c("Weekly_Grocery_Total", "Weekly_Dineout_Total")), na.rm = TRUE))
+
+# Calculate the total weekly food spend for all respondents
+total_weekly_food_spend <- sum(grocery_data$Weekly_Total, na.rm = TRUE)
+total_weekly_food_spend
+
+# Calculate the total monthly food spend
+total_monthly_food_spend <- total_weekly_food_spend * 4
+total_monthly_food_spend
+
+# creating thresholds for food recommendations
+groc_thres <- recs %>%
+  filter(type == "grocery") %>%
+  select("place", "price") %>%
+  arrange(price)
+
+res_thres <- recs[c(1:5), ] %>%
+  select("place", "price") %>%
+  arrange(price)
+
+recsdata <- grocery_data %>%
+  select("Weekly_Grocery_Total", "Weekly_Dineout_Total")
+
+# function to match dining budgets to restaurants
+recsdata$res_rec <- NA
+
+rest_recs <- data.frame(
+  price = recs$price,
+  place = recs$place
+)
+
+# Function to recommend a restaurant based on budget
+res_rec <- function(budget, res_thres) {
+  for (i in 1:nrow(res_thres)) {
+    if (budget < res_thres$price[i]) {
+      return(res_thres$place[i])
+    }
+  }
+  return(res_thres$place[nrow(res_thres)])
+}
+
+# Apply the function to each `Weekly_Dineout_Total` in `recsdata`
+recsdata$res_rec <- sapply(recsdata$Weekly_Dineout_Total, 
+                           function(budget) res_rec(budget, rest_recs))
+
+for (i in 1:nrow(recsdata)) {
+  if (recsdata$Weekly_Dineout_Total[i] == 0) {
+    recsdata$res_rec[i] <- "No Dining Budget"
+  }
+}
+
+# Load grocery recommendation data
+groc_rec_data <- read.csv("Grocery Data - Sheet1.csv")
+
+# Define the grocery recommendation function
+groc_rec <- function(budget, groc_thres) {
+  # Iterate through rows of the grocery threshold data
+  for (i in 1:nrow(groc_thres)) {
+    # Use the correct column name "avg_price"
+    if (budget < groc_thres$avg_price[i]) {  
+      return(groc_thres$Store[i])  # Return the Store name
+    }
+  }
+  # Return the last option if all prices are above the budget
+  return(groc_thres$Store[nrow(groc_thres)])
+}
+
+# Apply the `groc_rec` function to each Weekly_Grocery_Total in `recsdata`
+recsdata$groc_rec <- sapply(recsdata$Weekly_Grocery_Total, function(budget) groc_rec(budget, groc_rec_data))
+
+# Update `groc_rec` for rows with zero grocery budget
+recsdata$groc_rec[recsdata$Weekly_Grocery_Total == 0] <- "No Grocery Budget"
+
+# features going into the dashboard
+
+min_grocery_index <- which.min(recsdata$Weekly_Grocery_Total[recsdata$groc_rec != "No Grocery Budget"])
+min_grocery_store <- recsdata$groc_rec[min_grocery_index]
+min_grocery_store
+
+min_restaurant_index <- which.min(recsdata$Weekly_Dineout_Total[recsdata$res_rec != "No Dining Budget"])
+min_restaurant <- recsdata$res_rec[min_restaurant_index]
+min_restaurant
+```
+
+## Top Grocery And Restuarant
+
+The following code chunk is one of our key metrics for demonstrating to users the current's top grocery and restuarant spending locations.
+
+```{r top-groc-rest-spending}
+top_grocery <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  pivot_longer(
+    cols = c(Produce, Dairy, Grain, Baking, Drinks, Protein), 
+    names_to = "Grocery_Category", 
+    values_to = "Grocery_Spending"
+  ) %>%
+  group_by(week) %>%
+  arrange(desc(Grocery_Spending)) %>%
+  slice_head(n = 3) %>% 
+  
+  summarise(
+    Top_3_Grocery_Categories = paste(Grocery_Category, collapse = ", "),
+    Top_3_Grocery_Amounts = paste(Grocery_Spending, collapse = ", ")
+  )
+
+
+top_restaurant <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  pivot_longer(
+    cols = c(Appetizers, Entrees, Desserts, Beverages), 
+    names_to = "Restaurant_Category", 
+    values_to = "Restaurant_Spending"
+  ) %>%
+  group_by(week) %>%
+  arrange(desc(Restaurant_Spending)) %>%
+  slice_head(n = 3) %>% 
+  
+  summarise(
+    Top_3_Restaurant_Categories = paste(Restaurant_Category, collapse = ", "),
+    Top_3_Restaurant_Amounts = paste(Restaurant_Spending, collapse = ", ")
+  )
+
+top_three_spending <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  left_join(top_grocery, by = "week") %>%
+  left_join(top_restaurant, by = "week") %>%
+  select(-week)
+
+
+top_three_spending_data <- top_three_spending %>%
+  select(Top_3_Grocery_Categories, Top_3_Grocery_Amounts, Top_3_Restaurant_Categories, Top_3_Restaurant_Amounts)
+
+grocery_data <- grocery_data %>%
+  mutate(
+    Store_Name = ifelse(Store == "Other", Other_Store, Store)
+  )
+
+# Step 2: Select the top restaurant (with a value of 1) for each week
+grocery_data <- grocery_data %>%
+  rowwise() %>%
+  mutate(
+    Restaurant_Name = case_when(
+      Koko == 1 ~ "Koko",
+      WingsOver == 1 ~ "WingsOver",
+      Moosewood == 1 ~ "Moosewood",
+      ThompsonBleeker == 1 ~ "ThompsonBleeker",
+      Pokelava == 1 ~ "Pokelava",
+      TRUE ~ NA_character_  # Handle cases where no restaurant is selected
+    )
+  ) %>%
+  ungroup()
+
+# Step 3: Create a separate table with just the store and top restaurant for each week
+store_restaurant_table <- grocery_data %>%
+  mutate(week = row_number()) %>% # Add week number as an identifier
+  select(week, Store_Name, Restaurant_Name) # Select only relevant columns
+
+# View the resulting table
+store_rest_data <- store_restaurant_table |>
+  group_by(Store_Name, Restaurant_Name) |>
+  count() |>
+  filter(!is.na(Restaurant_Name),
+         Store_Name != "") |>
+  arrange(desc(n))
+
+store_rest_vec <- store_rest_data[3, ]
+
+top_three_spending_data <- top_three_spending_data |>
+  filter(Top_3_Restaurant_Amounts == "72, 50, 23")
+```
+
+##Take four rows as four weeks (a month)
+```{r}
+nov <- grocery_data |>
+    slice(1:4) 
+nov_bud <- sum(nov$Weekly_Total)
+```
+
+##top three categories of most mentioned grocery store (aldis) and restaurant (pokelava)
+```{r}
+tops <- grocery_data |>
+  filter(Resturant == "Pokelava") |>
+  select(17:20) 
+
+avg <- colMeans(tops)
+
+print(avg)
+
+```
+
+
+## The Dashboard itself
+
+```{r dashbaord}
+
+# Define UI
+ui <- dashboardPage(
+  
+  dashboardHeader(
+    title = span("CU Budget", style = "font-weight: bold; color: white;"),
+    titleWidth = 250
+  ),
+  
+  dashboardSidebar(disable = TRUE),  # Disable the sidebar
+  
+  dashboardBody(
+    # Apply styling for olive header and graph header
+    # tags$head(tags$style(HTML("
+    #   .skin-blue .main-header .navbar {
+    #     background-color: olive;
+    #   }
+    #   .skin-blue .main-header .logo {
+    #     background-color: olive;
+    #   }
+    #   .box.box-primary > .box-header {
+    #     background-color: olive;
+    #     color: white;
+    #   }
+    # "))),
+    
+    fluidRow(
+      column(12,
+        valueBox(
+          div("Monthly Spending (November)",  
+              style = "font-size: 18px; font-weight: normal;"),
+          div(paste0("$", nov_bud), 
+              style = "font-size: 32px; font-weight: bold;"),
+          icon = icon("credit-card"),
+          width = NULL
+        )
+      )
+    ),
+    
+    # Line Graph Section
+    fluidRow(
+      box(
+        title = "Spending Trend In November",
+        width = 12,
+        status = "primary",
+        solidHeader = TRUE,
+        plotlyOutput("lineGraph")
+      )
+    ),
+    
+    # Bar Chart Section
+    fluidRow(
+      box(
+        title = "Average Grocery vs Dineout Spending",
+        width = 12,
+        status = "primary",
+        solidHeader = TRUE,
+        plotOutput("barChart")
+      )
+    ),
+    
+    # Additional content sections
+    fluidRow(
+      div(
+        style = "text-align: left; margin-left: 20px;",
+        h2("November Month's Spending Trend")
+      )
+    ),
+    fluidRow(
+      div(
+        style = "text-align: left; margin-left: 20px;",
+        h2("Top Three Categories Of Spending"),
+        p("Here are the top three food categories you’ve spent 
+        the most on at your favorite grocery store and restaurant!")
+      )
+    ),
+    fluidRow(
+      box(
+        title = "Aldi's Spending", 
+        width = 6, 
+        solidHeader = TRUE, 
+        status = "primary", 
+        textOutput("aldis_spending")
+      ),
+      box(
+        title = "Pokelava Spending", 
+        width = 6, 
+        solidHeader = TRUE, 
+        status = "primary", 
+        textOutput("poke_spending")
+      )
+    ),
+    fluidRow(
+      div(
+        style = "text-align: left; margin-left: 20px;",
+        h2("Enter Your Ideal Total Food Budget"),
+        p("Here are the recommended store and restaurant for your shopping and
+        dining out. We suggest setting a reasonable budget—anything close to $0
+        might not quite cover a whole month in Ithaca!")
+      )
+    ),
+    fluidRow(
+      column(6, 
+             valueBoxOutput("recommended_grocery", width = NULL)),
+      column(6, 
+             valueBoxOutput("recommended_restaurant", width = NULL))
+    ),
+    fluidRow(
+      column(6,
+             numericInput("custom_budget", 
+                          "Enter your weekly food budget:", 
+                          value = min(grocery_data$Weekly_Total), 
+                          min = min(grocery_data$Weekly_Total),
+                          max = 100000)
+      )
+    ),
+    fluidRow(
+      column(6,
+             valueBoxOutput("custom_grocery", width = NULL)),
+      column(6,
+             valueBoxOutput("custom_restaurant", width = NULL))
+    )
+  )
+)
+
+# Define Server
+server <- function(input, output) {
+  
+  # Grocery and restaurant recommendation thresholds
+  groc_thres <- data.frame(
+    place = c("Aldi's", "Trader Joes", "Walmart", "Tops", "Wegmans", "Green Star", "BJ"),
+    price = c(45.64, 57.19, 62.23, 65.35, 67.91, 89.08, 97.61)
+  )
+  
+  res_thres <- data.frame(
+    place = c("Pokelava", "Koko", "Wings Over", "Moosewood", "Thompson and Bleecker"),
+    price = c(22.05, 26.98, 28.46, 40.25, 49.00)
+  )
+  
+  # Recommendation functions
+  groc_rec <- function(budget, groc_thres) {
+    for (i in 1:nrow(groc_thres)) {
+      if (budget < groc_thres$price[i]) {
+        return(groc_thres$place[i])
+      }
+    }
+    return(groc_thres$place[nrow(groc_thres)])
+  }
+  
+  res_rec <- function(budget, res_thres) {
+    for (i in 1:nrow(res_thres)) {
+      if (budget < res_thres$price[i]) {
+        return(res_thres$place[i])
+      }
+    }
+    return(res_thres$place[nrow(res_thres)])
+  }
+  
+ # Validation function for input
+  validate_input <- function(value) {
+    if (is.null(value) || !is.numeric(value) || value < 0) {
+      return(FALSE)
+    }
+    return(TRUE)
+  }
+  
+  # Custom recommendations based on user input with validation
+  output$custom_grocery <- renderValueBox({
+    if (!validate_input(input$custom_budget)) {
+      valueBox("Error Invalid Input", 
+               "Please provide a positive number greater or equal to zero", 
+               icon = icon("exclamation-triangle"), color = "red")
+    } else {
+      grocery <- groc_rec(input$custom_budget, groc_thres)
+      valueBox(grocery, "Recommended Grocery Store", icon = icon("cart-shopping"), color = "olive")
+    }
+  })
+  
+  output$custom_restaurant <- renderValueBox({
+    if (!validate_input(input$custom_budget)) {
+      valueBox("Error Invalid Input", 
+               "Please provide a positive number greater or equal to zero", 
+               icon = icon("exclamation-triangle"), color = "red")
+    } else {
+      restaurant <- res_rec(input$custom_budget, res_thres)
+      valueBox(restaurant, "Recommended Restaurant", icon = icon("utensils"), color = "teal")
+    }
+  })
+  
+  # Line graph rendering
+  output$lineGraph <- renderPlotly({ lineGraph })
+  
+  # Bar chart rendering
+  output$barChart <- renderPlot({ spending_Barchart })
+  
+  # Text outputs
+  output$aldis_spending <- renderText({
+    "Produce: $18,  Protein: $15,  Grain: $14"
+  })
+  
+  output$poke_spending <- renderText({
+    "Entrees: $19, Appetizers: $7, Desserts: $4"
+  })
+}
+
+# Launch the Shiny app
+shinyApp(ui, server)
+
+
+
+
+```

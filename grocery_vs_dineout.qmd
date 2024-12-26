@@ -1,0 +1,75 @@
+```{r}
+library(tidyverse)
+library(readr)
+library(knitr)
+```
+
+```{r}
+grocery_data<-read.csv("survey_data.csv", header=TRUE)
+```
+
+```{r}
+grocery_data<-grocery_data %>% rename(
+  Store = Q1, 
+  Other_Store = Q2, 
+  Produce = Q3_1, 
+  Dairy = Q3_2, 
+  Grain = Q3_3, 
+  Baking = Q3_4, 
+  Drinks = Q3_5, 
+  Protein = Q3_6, 
+  Freq_Dineout = Q1.1, 
+  Resturant = Q2.1, 
+  Other_Resturant = Q3, 
+  Koko = Q4_1, 
+  WingsOver = Q4_2, 
+  Moosewood = Q4_3, 
+  ThompsonBleeker = Q4_4, 
+  Pokelava = Q4_5, 
+  Appetizers = Q5_1, 
+  Entrees = Q5_2, 
+  Desserts = Q5_3, 
+  Beverages = Q5_4)
+```
+
+```{r}
+grocery_data <- grocery_data[-c(1, 2), ] %>%
+  select(-(1:11)) %>%
+  filter(!is.na(Store) & Store != "")
+```
+
+```{r}
+grocery_data <- grocery_data %>%
+  mutate(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein", "Appetizers", "Entrees", "Desserts", "Beverages"), ~ ifelse(. == "", 0, .))) %>% 
+  mutate(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein","Appetizers", "Entrees", "Desserts", "Beverages"), as.numeric))
+
+```
+
+```{r}
+grocery_data <- grocery_data %>%
+  mutate(Weekly_Grocery_Total = rowSums(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein")), na.rm = TRUE)) %>%
+   mutate(Weekly_Dineout_Total = rowSums(across(c("Appetizers", "Entrees", "Desserts", "Beverages")), na.rm = TRUE)) %>%
+  mutate(Weekly_Total = rowSums(across(c("Weekly_Grocery_Total", "Weekly_Dineout_Total")), na.rm = TRUE))
+
+```
+
+```{r}
+#weekly grocery vs dining out spending
+avg_grocery <- mean(grocery_data$Weekly_Grocery_Total)
+avg_dining <- mean(grocery_data$Weekly_Dineout_Total)
+
+averages <- data.frame(
+  Category = c("Grocery", "Dineout"),
+  Average = c(avg_grocery, avg_dining)
+)
+
+# Load ggplot2 for plotting
+library(ggplot2)
+
+# Create bar chart
+ggplot(averages, aes(x = Category, y = Average, fill = Category)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0("$", format(round(Average, 2), nsmall = 2))), vjust = -0.3, size = 5) +
+  labs(title = "Average Dineout vs Grocery Spendings", y = "Average Spending (in Dollars)") +
+  theme_minimal()
+```

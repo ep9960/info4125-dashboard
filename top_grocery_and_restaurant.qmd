@@ -1,0 +1,134 @@
+---
+title: "top_grocery_and_restaurant"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(readr)
+library(knitr)
+```
+
+```{r}
+grocery_data<-read.csv("survey_data.csv", header=TRUE)
+```
+
+```{r}
+grocery_data<-grocery_data %>% rename(
+  Store = Q1, 
+  Other_Store = Q2, 
+  Produce = Q3_1, 
+  Dairy = Q3_2, 
+  Grain = Q3_3, 
+  Baking = Q3_4, 
+  Drinks = Q3_5, 
+  Protein = Q3_6, 
+  Freq_Dineout = Q1.1, 
+  Resturant = Q2.1, 
+  Other_Resturant = Q3, 
+  Koko = Q4_1, 
+  WingsOver = Q4_2, 
+  Moosewood = Q4_3, 
+  ThompsonBleeker = Q4_4, 
+  Pokelava = Q4_5, 
+  Appetizers = Q5_1, 
+  Entrees = Q5_2, 
+  Desserts = Q5_3, 
+  Beverages = Q5_4)
+```
+
+```{r}
+grocery_data <- grocery_data[-c(1, 2), ] %>%
+  select(-(1:11))
+```
+
+```{r}
+grocery_data <- grocery_data %>%
+  mutate(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein", "Appetizers", "Entrees", "Desserts", "Beverages"), ~ ifelse(. == "", 0, .))) %>% 
+  mutate(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein","Appetizers", "Entrees", "Desserts", "Beverages"), as.numeric))
+
+```
+
+```{r}
+grocery_data <- grocery_data %>%
+  mutate(Weekly_Grocery_Total = rowSums(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein")), na.rm = TRUE)) %>%
+   mutate(Weekly_Dineout_Total = rowSums(across(c("Appetizers", "Entrees", "Desserts", "Beverages")), na.rm = TRUE)) %>%
+  mutate(Weekly_Total = rowSums(across(c("Weekly_Grocery_Total", "Weekly_Dineout_Total")), na.rm = TRUE))
+
+```
+
+```{r}
+top_grocery <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  pivot_longer(
+    cols = c(Produce, Dairy, Grain, Baking, Drinks, Protein), 
+    names_to = "Grocery_Category", 
+    values_to = "Grocery_Spending"
+  ) %>%
+  group_by(week) %>%
+  arrange(desc(Grocery_Spending)) %>%
+  slice_head(n = 3) %>% 
+  
+  summarise(
+    Top_3_Grocery_Categories = paste(Grocery_Category, collapse = ", "),
+    Top_3_Grocery_Amounts = paste(Grocery_Spending, collapse = ", ")
+  )
+
+
+top_restaurant <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  pivot_longer(
+    cols = c(Appetizers, Entrees, Desserts, Beverages), 
+    names_to = "Restaurant_Category", 
+    values_to = "Restaurant_Spending"
+  ) %>%
+  group_by(week) %>%
+  arrange(desc(Restaurant_Spending)) %>%
+  slice_head(n = 3) %>% 
+  
+  summarise(
+    Top_3_Restaurant_Categories = paste(Restaurant_Category, collapse = ", "),
+    Top_3_Restaurant_Amounts = paste(Restaurant_Spending, collapse = ", ")
+  )
+
+top_three_spending <- grocery_data %>%
+  mutate(week = row_number()) %>% 
+  left_join(top_grocery, by = "week") %>%
+  left_join(top_restaurant, by = "week") %>%
+  select(-week)
+
+
+top_three_spending %>%
+  select(Top_3_Grocery_Categories, Top_3_Grocery_Amounts, Top_3_Restaurant_Categories, Top_3_Restaurant_Amounts)
+```
+
+```{r}
+grocery_data <- grocery_data %>%
+  mutate(
+    Store_Name = ifelse(Store == "Other", Other_Store, Store)
+  )
+
+# Step 2: Select the top restaurant (with a value of 1) for each week
+grocery_data <- grocery_data %>%
+  rowwise() %>%
+  mutate(
+    Restaurant_Name = case_when(
+      Koko == 1 ~ "Koko",
+      WingsOver == 1 ~ "WingsOver",
+      Moosewood == 1 ~ "Moosewood",
+      ThompsonBleeker == 1 ~ "ThompsonBleeker",
+      Pokelava == 1 ~ "Pokelava",
+      TRUE ~ NA_character_  # Handle cases where no restaurant is selected
+    )
+  ) %>%
+  ungroup()
+
+# Step 3: Create a separate table with just the store and top restaurant for each week
+store_restaurant_table <- grocery_data %>%
+  mutate(week = row_number()) %>% # Add week number as an identifier
+  select(week, Store_Name, Restaurant_Name) # Select only relevant columns
+
+# View the resulting table
+store_restaurant_table
+```

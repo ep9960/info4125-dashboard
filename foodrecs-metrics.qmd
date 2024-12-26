@@ -1,0 +1,146 @@
+```{r}
+library(tidyverse)
+library(readr)
+library(knitr)
+```
+
+```{r}
+## clean data and relabel columns
+grocery_data<-read.csv("survey_data.csv", header=TRUE)
+recs<-read.csv("recs.csv", header=TRUE)
+
+grocery_data<-grocery_data %>% rename(
+  Store = Q1, 
+  Other_Store = Q2, 
+  Produce = Q3_1, 
+  Dairy = Q3_2, 
+  Grain = Q3_3, 
+  Baking = Q3_4, 
+  Drinks = Q3_5, 
+  Protein = Q3_6, 
+  Freq_Dineout = Q1.1, 
+  Resturant = Q2.1, 
+  Other_Resturant = Q3, 
+  Koko = Q4_1, 
+  WingsOver = Q4_2, 
+  Moosewood = Q4_3, 
+  ThompsonBleeker = Q4_4, 
+  Pokelava = Q4_5, 
+  Appetizers = Q5_1, 
+  Entrees = Q5_2, 
+  Desserts = Q5_3, 
+  Beverages = Q5_4)
+
+grocery_data <- grocery_data[-c(1, 2), ] %>%
+  select(-(1:11))
+
+grocery_data <- grocery_data %>%
+  mutate(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein", "Appetizers", "Entrees", "Desserts", "Beverages"), ~ ifelse(. == "", 0, .))) %>% 
+  mutate(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein","Appetizers", "Entrees", "Desserts", "Beverages"), as.numeric))
+
+```
+
+```{r}
+# create totals of food budgets
+grocery_data <- grocery_data %>%
+  mutate(Weekly_Grocery_Total = rowSums(across(c("Produce", "Dairy", "Grain", "Baking", "Drinks", "Protein")), na.rm = TRUE)) %>%
+   mutate(Weekly_Dineout_Total = rowSums(across(c("Appetizers", "Entrees", "Desserts", "Beverages")), na.rm = TRUE)) %>%
+  mutate(Weekly_Total = rowSums(across(c("Weekly_Grocery_Total", "Weekly_Dineout_Total")), na.rm = TRUE))
+
+```
+
+```{r}
+# Calculate the total weekly food spend for all respondents
+total_weekly_food_spend <- sum(grocery_data$Weekly_Total, na.rm = TRUE)
+total_weekly_food_spend
+
+```
+
+```{r}
+# Calculate the total monthly food spend
+total_monthly_food_spend <- total_weekly_food_spend * 4
+total_monthly_food_spend
+```
+
+```{r}
+# creating thresholds for food recommendations
+groc_thres <- recs %>%
+  filter(type == "grocery") %>%
+  select("place", "price") %>%
+  arrange(price)
+
+res_thres <- recs[c(1:5), ] %>%
+  select("place", "price") %>%
+  arrange(price)
+```
+
+```{r}
+recsdata <- grocery_data %>%
+  select("Weekly_Grocery_Total", "Weekly_Dineout_Total")
+
+# function to match dining budgets to restaurants
+recsdata$res_rec <- NA
+
+rest_recs <- data.frame(
+  price = recs$price,
+  place = recs$place
+)
+
+# Function to recommend a restaurant based on budget
+res_rec <- function(budget, res_thres) {
+  for (i in 1:nrow(res_thres)) {
+    if (budget < res_thres$price[i]) {
+      return(res_thres$place[i])
+    }
+  }
+  return(res_thres$place[nrow(res_thres)])
+}
+
+# Apply the function to each `Weekly_Dineout_Total` in `recsdata`
+recsdata$res_rec <- sapply(recsdata$Weekly_Dineout_Total, 
+                           function(budget) res_rec(budget, rest_recs))
+
+for (i in 1:nrow(recsdata)) {
+  if (recsdata$Weekly_Dineout_Total[i] == 0) {
+    recsdata$res_rec[i] <- "No Dining Budget"
+  }
+}
+
+```
+
+```{r}
+# Load grocery recommendation data
+groc_rec_data <- read.csv("Grocery Data - Sheet1.csv")
+
+# Define the grocery recommendation function
+groc_rec <- function(budget, groc_thres) {
+  # Iterate through rows of the grocery threshold data
+  for (i in 1:nrow(groc_thres)) {
+    # Use the correct column name "avg_price"
+    if (budget < groc_thres$avg_price[i]) {  
+      return(groc_thres$Store[i])  # Return the Store name
+    }
+  }
+  # Return the last option if all prices are above the budget
+  return(groc_thres$Store[nrow(groc_thres)])
+}
+
+# Apply the `groc_rec` function to each Weekly_Grocery_Total in `recsdata`
+recsdata$groc_rec <- sapply(recsdata$Weekly_Grocery_Total, function(budget) groc_rec(budget, groc_rec_data))
+
+# Update `groc_rec` for rows with zero grocery budget
+recsdata$groc_rec[recsdata$Weekly_Grocery_Total == 0] <- "No Grocery Budget"
+
+
+```
+
+
+//Dashboard Features
+```{r}
+paste("Your Weekly Grocery Budget: $", recsdata$Weekly_Grocery_Total)
+paste("Your Weekly Dining Budget: $", recsdata$Weekly_Dineout_Total)
+
+paste("Your Recommended Grocery Store: ", recsdata$groc_rec)
+paste("Your Recommended Restaurant: ", recsdata$res_rec)
+```
+
